@@ -114,7 +114,7 @@ def hybrid_search(img, category, vector_db, top_k=5):
 # STREAMLIT UI
 # ==============================
 st.set_page_config(layout="wide")
-st.title("⚡ Retail Image Search (Paths Only)")
+# st.title("⚡ Retail Image Search (Paths Only)")
 
 uploaded_file = st.file_uploader(
     "Upload product image", type=["jpg", "jpeg", "png"]
