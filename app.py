@@ -61,6 +61,9 @@ clip_model, clip_processor, vector_db = load_resources()
 # ==============================
 import torch.nn.functional as F
 
+import torch.nn.functional as F
+import numpy as np
+
 def get_clip_embedding(img: Image.Image):
     inputs = clip_processor(images=img, return_tensors="pt")
     inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
@@ -68,16 +71,19 @@ def get_clip_embedding(img: Image.Image):
     with torch.no_grad():
         emb = clip_model.get_image_features(**inputs)
 
-    # ✅ Handle both torch tensor & numpy safely
+    # ✅ STRICT, SAFE TYPE HANDLING
     if isinstance(emb, torch.Tensor):
-        emb = emb.detach()
+        emb_t = emb.detach()
+    elif isinstance(emb, np.ndarray):
+        emb_t = torch.from_numpy(emb)
     else:
-        emb = torch.from_numpy(emb)
+        raise TypeError(f"Unexpected embedding type: {type(emb)}")
 
-    # ✅ L2 normalize safely
-    emb = F.normalize(emb, p=2, dim=-1)
+    # ✅ L2 normalize
+    emb_t = F.normalize(emb_t, p=2, dim=-1)
 
-    return emb.cpu().numpy()
+    return emb_t.cpu().numpy()
+
 
 
 def phash_similarity(a, b):
