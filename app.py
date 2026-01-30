@@ -60,10 +60,20 @@ clip_model, clip_processor, vector_db = load_resources()
 # EMBEDDING + HASH
 # ==============================
 def get_clip_embedding(img: Image.Image):
-    inputs = clip_processor(images=img, return_tensors="pt").to(DEVICE)
+    inputs = clip_processor(images=img, return_tensors="pt")
+
+    # Always move tensors to device
+    inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
     with torch.no_grad():
         emb = clip_model.get_image_features(**inputs)
-    emb = emb / emb.norm(p=2, dim=-1, keepdim=True)
+
+    # 🔒 Force torch tensor + safe normalization
+    if not isinstance(emb, torch.Tensor):
+        emb = torch.tensor(emb)
+
+    emb = F.normalize(emb, p=2, dim=-1)
+
     return emb.cpu().numpy()
 
 def phash_similarity(a, b):
