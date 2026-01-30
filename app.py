@@ -1,37 +1,39 @@
 # app.py
-import streamlit as st
+import os
 import pickle
 import numpy as np
 import torch
+import streamlit as st
+import pandas as pd
+
 from PIL import Image
 import imagehash
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import CLIPProcessor, CLIPModel
-import google.generativeai as genai
-import os
-import pandas as pd
+
+# Gemini (NEW SDK)
+from google import genai
+from google.genai import types
 
 # ==============================
 # CONFIG
 # ==============================
-import os
-import streamlit as st
-import google.generativeai as genai
-
-api_key = os.environ.get("GEMINI_API_KEY")
-if not api_key:
-    st.error("GEMINI_API_KEY not configured")
-    st.stop()
-
-genai.configure(api_key=api_key)
-
-
 VECTOR_DB_PATH = "vector_database.pkl"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TOP_K = 5
 CLIP_WEIGHT = 0.7
 PHASH_WEIGHT = 0.3
+
+# ==============================
+# GEMINI CLIENT (SECURE)
+# ==============================
+api_key = os.environ.get("GEMINI_API_KEY")
+if not api_key:
+    st.error("GEMINI_API_KEY not set. Add it in Streamlit Secrets.")
+    st.stop()
+
+client = genai.Client(api_key=api_key)
 
 # ==============================
 # LOAD MODELS (CACHED)
@@ -102,7 +104,7 @@ def hybrid_search(img, category, vector_db, top_k=5):
 # STREAMLIT UI
 # ==============================
 st.set_page_config(layout="wide")
-st.title("⚡ Retail Image Search (Paths Only, No SAM)")
+st.title("⚡ Retail Image Search (Paths Only)")
 
 uploaded_file = st.file_uploader(
     "Upload product image", type=["jpg", "jpeg", "png"]
@@ -110,23 +112,37 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
     user_img = Image.open(uploaded_file).convert("RGB")
-    st.image(user_img, caption="Input Image")
+    st.image(user_img, caption="Uploaded Image")
 
     if st.button("Identify & Find"):
         with st.spinner("Classifying & searching..."):
 
             # 1️⃣ GEMINI CATEGORY CLASSIFICATION
-            gemini = genai.GenerativeModel("gemini-2.5-flash")
-
             prompt = f"""
-            Identify the clothing category.
-            Choices: {', '.join(vector_db.keys())}
-            Return ONLY the word.
-            """
+Identify the clothing category.
+Choices: {', '.join(vector_db.keys())}
+Return ONLY the word.
+"""
 
-            category = gemini.generate_content(
-                [prompt, user_img]
-            ).text.strip()
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(text=prompt),
+                            types.Part(
+                                inline_data=types.Blob(
+                                    mime_type=uploaded_file.type,
+                                    data=uploaded_file.getvalue()
+                                )
+                            )
+                        ]
+                    )
+                ]
+            )
+
+            category = response.text.strip()
 
             if category not in vector_db:
                 st.error(f"Unknown category returned: {category}")
@@ -146,18 +162,18 @@ if uploaded_file:
             st.subheader("Top-5 Similar Results (Paths Only)")
 
             df = pd.DataFrame(results)
-            st.dataframe(df)
+            st.dataframe(df, use_container_width=True)
 
             st.markdown("### Result Paths")
             for r in results:
                 st.markdown(
                     f"- `{r['path']}`  \n"
-                    f"  Final: **{r['final']:.3f}**, "
-                    f"CLIP: {r['clip']:.3f}, "
+                    f"  **Final:** {r['final']:.3f} | "
+                    f"CLIP: {r['clip']:.3f} | "
                     f"pHash: {r['phash']:.3f}"
                 )
 
             st.info(
-                "✅ SAM removed | ✅ No DB images loaded | "
-                "✅ GitHub & Streamlit Community Cloud friendly"
+                "✅ No SAM | ✅ No DB images | "
+                "✅ Secure API | ✅ Streamlit Cloud ready"
             )
